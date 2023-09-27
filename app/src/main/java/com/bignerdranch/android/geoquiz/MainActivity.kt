@@ -1,38 +1,38 @@
 package com.bignerdranch.android.geoquiz
 
+import android.app.Activity
+import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import com.bignerdranch.android.geoquiz.databinding.ActivityMainBinding
-import kotlin.math.roundToInt
 
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private var currentIndex = 0
-    private var testPoints = 0
-    private val questionBank = listOf(
-        Question(R.string.question_australia, true),
-        Question(R.string.question_oceans, true),
-        Question(R.string.question_mideast, false),
-        Question(R.string.question_africa, false),
-        Question(R.string.question_americas, true),
-        Question(R.string.question_asia, true))
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putInt("index",currentIndex)
-        outState.putInt("testPoints",testPoints)
+    private val quizViewModel: QuizViewModel by viewModels()
 
+    private val cheatLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            quizViewModel.isCheater =
+                result.data?.getBooleanExtra(EXTRA_ANSWER_SHOWN, false) ?: false
+            quizViewModel.useTips()
+            Toast.makeText(this,getString(R.string.tipsToast,quizViewModel.getTips()),
+                Toast.LENGTH_LONG).show()
+            if(!quizViewModel.havingTips()) binding.cheatButton.visibility = View.INVISIBLE
+        }
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState != null) {
-            currentIndex  = savedInstanceState.getInt("index")
-            testPoints  = savedInstanceState.getInt("testPoints")
-        }
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -49,46 +49,58 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.nextButton.setOnClickListener {
-            if(isLastQuestion()){
+            if(quizViewModel.isLastQuestion()){
                 binding.nextButton.visibility = View.INVISIBLE
-                Toast.makeText(this,testResult(testPoints).toString()
+                Toast.makeText(this,quizViewModel.testResult().toString()
                     +"%",Toast.LENGTH_LONG)
                     .show()
                 return@setOnClickListener
             }
-            currentIndex = (currentIndex + 1) % questionBank.size
+            quizViewModel.moveToNext()
             updateQuestion()
             binding.trueButton.visibility = View.VISIBLE
             binding.falseButton.visibility = View.VISIBLE
+            quizViewModel.isCheater = false
+
         }
+
+        binding.cheatButton.setOnClickListener {
+            val answerIsTrue = quizViewModel.currentQuestionAnswer
+            val intent = CheatActivity.newIntent(this@MainActivity, answerIsTrue)
+            cheatLauncher.launch(intent)
+
+
+        }
+
 
         updateQuestion()
 
     }
     private fun updateQuestion() {
-        val questionTextResId = questionBank[currentIndex].textResId
+        val questionTextResId = quizViewModel.currentQuestionText
         binding.questionTextView.setText(questionTextResId)
     }
 
     private fun checkAnswer(userAnswer: Boolean) {
-        val correctAnswer = questionBank[currentIndex].answer
-        val messageResId = if (userAnswer == correctAnswer) {
-            testPoints+=1
-            R.string.correct_toast
 
-        } else {
-            R.string.incorrect_toast
+        val correctAnswer = quizViewModel.currentQuestionAnswer
+
+        val messageResId = when {
+            quizViewModel.isCheater -> {
+                quizViewModel.addPoint()
+                R.string.judgment_toast
+            }
+            userAnswer == correctAnswer -> {
+                quizViewModel.addPoint()
+                R.string.correct_toast
+            }
+            else -> R.string.incorrect_toast
         }
+
         Toast.makeText(this, messageResId, Toast.LENGTH_SHORT)
             .show()
 
     }
-    private fun isLastQuestion(): Boolean{
-        return (currentIndex + 1) == questionBank.size
-    }
-    private  fun testResult(points : Int): Double{
-        return (((points.toDouble() / questionBank.size) * 100)
-        *100).roundToInt() / 100.0
-    }
+
 
 }
